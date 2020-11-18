@@ -67,8 +67,8 @@ def run_model():
     torch.cuda.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = GPT2Tokenizer.from_pretrained('wikitext-103-1024-model')
-    model = GPT2LMHeadModel.from_pretrained('wikitext-103-1024-model')
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    model = GPT2LMHeadModel.from_pretrained('gpt2')
     model.eval()
     model.to(device)
 
