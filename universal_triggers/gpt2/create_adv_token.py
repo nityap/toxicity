@@ -3,7 +3,7 @@ import sys
 import torch
 import torch.nn.functional as F
 import numpy as np
-from pytorch_transformers import GPT2Tokenizer, GPT2LMHeadModel
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
 import sample_from_gpt2
 sys.path.append('..')
 import attacks
@@ -67,8 +67,8 @@ def run_model():
     torch.cuda.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-    model = GPT2LMHeadModel.from_pretrained('gpt2')
+    tokenizer = GPT2Tokenizer.from_pretrained('wikitext-103-1024-model')
+    model = GPT2LMHeadModel.from_pretrained('wikitext-103-1024-model')
     model.eval()
     model.to(device)
 
