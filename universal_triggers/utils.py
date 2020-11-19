@@ -5,7 +5,7 @@ import numpy
 import torch
 import torch.optim as optim
 from allennlp.common.util import lazy_groups_of
-from allennlp.data.iterators import BucketIterator
+#from allennlp.data.iterators import BucketIterator
 from allennlp.nn.util import move_to_device
 from allennlp.modules.text_field_embedders import TextFieldEmbedder
 
@@ -91,6 +91,12 @@ def get_average_grad(model, batch, trigger_token_ids, target_label=None, snli=Fa
     averaged_grad = averaged_grad[0:len(trigger_token_ids)] # return just trigger grads
     return averaged_grad
 
+class BucketIterator:
+    def __init__(self, batch_size, sorting_keys):
+        import pdb; pdb.set_trace()
+        self.batch_size = batch_size
+        sle.sorting_keys = sorting_keys
+
 def get_accuracy(model, dev_dataset, vocab, trigger_token_ids=None, snli=False):
     """
     When trigger_token_ids is None, gets accuracy on the dev_dataset. Otherwise, gets accuracy with
@@ -98,6 +104,7 @@ def get_accuracy(model, dev_dataset, vocab, trigger_token_ids=None, snli=False):
     """
     model.get_metrics(reset=True)
     model.eval() # model should be in eval() already, but just in case
+    import pdb; pdb.set_trace()
     if snli:
         iterator = BucketIterator(batch_size=128, sorting_keys=[("premise", "num_tokens")])
     else:

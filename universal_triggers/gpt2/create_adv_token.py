@@ -13,16 +13,18 @@ import utils
 def get_embedding_weight(language_model):
     for module in language_model.modules():
         if isinstance(module, torch.nn.Embedding):
-            if module.weight.shape[0] == 50257: # only add a hook to wordpiece embeddings, not position embeddings
+            if module.weight.shape[0] >= 50257: # only add a hook to wordpiece embeddings, not position embeddings
                 return module.weight.detach()
 
 # add hooks for embeddings
 def add_hooks(language_model):
     for module in language_model.modules():
         if isinstance(module, torch.nn.Embedding):
-            if module.weight.shape[0] == 50257: # only add a hook to wordpiece embeddings, not position
+            print(module.weight.shape)
+            if module.weight.shape[0] >= 50257: # only add a hook to wordpiece embeddings, not position
                 module.weight.requires_grad = True
                 module.register_backward_hook(utils.extract_grad_hook)
+                print("backward hook registered")
 
 # Gets the loss of the target_tokens using the triggers as the context
 def get_loss(language_model, batch_size, trigger, target, device='cuda'):
@@ -31,8 +33,12 @@ def get_loss(language_model, batch_size, trigger, target, device='cuda'):
     mask_out = -1 * torch.ones_like(tensor_trigger) # we zero out the loss for the trigger tokens
     lm_input = torch.cat((tensor_trigger, target), dim=1) # we feed the model the trigger + target texts
     mask_and_target = torch.cat((mask_out, target), dim=1) # has -1's + target texts for loss computation
-    lm_input[lm_input == -1] = 1   # put random token of 1 at end of context (its masked out)
-    loss = language_model(lm_input, labels=mask_and_target)[0]
+    lm_attention_mask = lm_input != -1
+    lm_input[~lm_attention_mask] = 1   # put random token of 1 at end of context (its masked out)
+    mask_and_target[mask_and_target == -1] = -100
+    loss = language_model(
+        lm_input, attention_mask=lm_attention_mask,
+        labels=mask_and_target)[0]
     return loss
 
 # creates the batch of target texts with -1 placed at the end of the sequences for padding (for masking out the loss).
@@ -67,8 +73,8 @@ def run_model():
     torch.cuda.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = GPT2Tokenizer.from_pretrained('wikitext-103-1024-model')
-    model = GPT2LMHeadModel.from_pretrained('wikitext-103-1024-model')
+    tokenizer = GPT2Tokenizer.from_pretrained('/raid/lingo/nityap/wikitext-103-1024-model')
+    model = GPT2LMHeadModel.from_pretrained('/raid/lingo/nityap/wikitext-103-1024-model')
     model.eval()
     model.to(device)
 
@@ -116,7 +122,7 @@ def run_model():
     target_tokens = make_target_batch(tokenizer, device, target_texts)
 
     for _ in range(10): # different random restarts of the trigger
-        total_vocab_size = 50257  # total number of subword pieces in the GPT-2 model
+        total_vocab_size = tokenizer.vocab_size  # total number of subword pieces in the GPT-2 model
         trigger_token_length = 6  # how many subword pieces in the trigger
         batch_size = target_tokens.shape[0]
 
