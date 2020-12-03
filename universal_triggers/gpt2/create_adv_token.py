@@ -191,7 +191,7 @@ def run_model():
         print("Loss: " + str(best_loss.data.item()))
         print(tokenizer.decode(trigger_tokens))
         
-        vals.append(tokenizer.decode(trigger_tokens))
+        vals1.append(tokenizer.decode(trigger_tokens))
         for _ in range(10):
             out = sample_from_gpt2.sample_sequence(
                 model=model, length=40,
