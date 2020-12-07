@@ -1,6 +1,6 @@
 import sys, os, re, csv, codecs, numpy as np, pandas as pd
 import matplotlib.pyplot as plt
-
+import pickle
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, Embedding, Dropout, Activation
@@ -78,6 +78,8 @@ list_sentences_test = test['text'][0:2717]
 max_features = 20000
 
 #tokenizer = Tokenizer(num_words=max_features)
+with open('tokenizer.pickle', 'rb') as handle:
+    tokenizer = pickle.load(handle)
 list_tokenized_test = tokenizer.texts_to_sequences(list_sentences_test)
 maxlen = 200
 X_te = pad_sequences(list_tokenized_test, maxlen=maxlen)
