@@ -8,7 +8,7 @@ import sample_from_gpt2
 sys.path.append('..')
 import attacks
 import utils
-
+import pandas as pd
 # returns the wordpiece embedding weight matrix
 def get_embedding_weight(language_model):
     for module in language_model.modules():
@@ -129,8 +129,9 @@ def run_model():
 
     # batch and pad the target tokens
     target_tokens = make_target_batch(tokenizer, device, target_texts)
-
-    for _ in range(10): # different random restarts of the trigger
+    #f = open("output_tokens.txt", "w")
+    vals1=[]
+    for _ in range(400): # different random restarts of the trigger
         total_vocab_size = tokenizer.vocab_size  # total number of subword pieces in the GPT-2 model
         trigger_token_length = 6  # how many subword pieces in the trigger
         batch_size = target_tokens.shape[0]
@@ -199,6 +200,8 @@ def run_model():
         # Print final trigger and get 10 samples from the model
         print("Loss: " + str(best_loss.data.item()))
         print(tokenizer.decode(trigger_tokens))
+        
+        vals1.append(tokenizer.decode(trigger_tokens))
         for _ in range(10):
             out = sample_from_gpt2.sample_sequence(
                 model=model, length=40,
@@ -211,6 +214,8 @@ def run_model():
                 text = tokenizer.decode(out[i])
                 print(text)
         print("=" * 80)
+    vals2=pd.Series(vals1)
+    vals2.to_csv("/raid/lingo/nityap/trig_output.csv")
 
 if __name__ == '__main__':
     run_model()

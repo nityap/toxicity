@@ -1,261 +1,93 @@
-# -*- coding: utf-8 -*-
-"""simple-lstm-fastai.ipynb
+import sys, os, re, csv, codecs, numpy as np, pandas as pd
+import matplotlib.pyplot as plt
+import pickle
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+from keras.layers import Dense, Input, LSTM, Embedding, Dropout, Activation
+from keras.layers import Bidirectional, GlobalMaxPool1D
+from keras.models import Model
+from keras import initializers, regularizers, constraints, optimizers, layers
+
+#
+#train = pd.read_csv('train.csv')
+#test = pd.read_csv('wikitok1000000.txt')
+#train.isnull().any(),test.isnull().any()
+#
+#list_classes = ['target', 'severe_toxicity', 'obscene', 'identity_attack', 'insult', 'threat']
+#y = train[list_classes].values
+#list_sentences_train = train["comment_text"]
+#list_sentences_test = test["0"]
+#max_features = 20000
+#
+#
+#tokenizer = Tokenizer(num_words=max_features)
+#tokenizer.fit_on_texts(list(list_sentences_train))
+#list_tokenized_train = tokenizer.texts_to_sequences(list_sentences_train)
+#list_tokenized_test = tokenizer.texts_to_sequences(list_sentences_test)
+#
+#maxlen = 200
+#X_t = pad_sequences(list_tokenized_train, maxlen=maxlen)
+#X_te = pad_sequences(list_tokenized_test, maxlen=maxlen)
+#
+#totalNumWords = [len(one_comment) for one_comment in list_tokenized_train]
+#
+#inp = Input(shape=(maxlen, ))
+#
+#embed_size = 128
+#x = Embedding(max_features, embed_size)(inp)
+#
+#x = LSTM(60, return_sequences=True,name='lstm_layer')(x)
+#
+#x = GlobalMaxPool1D()(x)
+#
+#
+#x = Dropout(0.1)(x)
+#
+#x = Dense(50, activation="relu")(x)
+#
+#x = Dropout(0.1)(x)
+#
+#x = Dense(6, activation="sigmoid")(x)
+#
+#
+#
+#
+#model = Model(inputs=inp, outputs=x)
+#model.compile(loss='binary_crossentropy',
+#                  optimizer='adam',
+#                  metrics=['accuracy'])
+#
+#
+#batch_size = 32
+#epochs = 2
+#model.fit(X_t,y, batch_size=batch_size, epochs=epochs, validation_split=0.1)
+#s=model.predict(X_te)
+#s=np.average(s, axis=1)
+#submission = pd.DataFrame.from_dict({
+#    'id': test["0"],
+#    'prediction': s})
+#submission.to_csv('wiki.csv', index=False)
+
+model = keras.models.load_model('lstm.h5')
+test1 = pd.read_json('prompts.jsonl',lines=True)
+test = pd.json_normalize(test1['prompt'])['text'].to_frame()
+
+#test = pd.read_csv('data_univtrig.csv')
+#test=pd.Series(target_texts)
+list_sentences_test = test['text'][0:2717]
+max_features = 20000
+
+#tokenizer = Tokenizer(num_words=max_features)
+with open('tokenizer.pickle', 'rb') as handle:
+    tokenizer = pickle.load(handle)
+list_tokenized_test = tokenizer.texts_to_sequences(list_sentences_test)
+maxlen = 200
+X_te = pad_sequences(list_tokenized_test, maxlen=maxlen)
+s=model.predict(X_te)
 
 
-# Imports & Utility functions
-"""
-
-from fastai.train import Learner
-from fastai.train import DataBunch
-from fastai.callbacks import *
-from fastai.basic_data import DatasetType
-
-
-
-
-import os
-
-
-
-
-import numpy as np
-import pandas as pd
-import os
-import time
-import gc
-import random
-from tqdm._tqdm_notebook import tqdm_notebook as tqdm
-from keras.preprocessing import text, sequence
-import torch
-from torch import nn
-from torch.utils import data
-from torch.nn import functional as F
-
-def is_interactive():
-   return 'SHLVL' not in os.environ
-
-if not is_interactive():
-    def nop(it, *a, **k):
-        return it
-
-    tqdm = nop
-
-def seed_everything(seed=1234):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-seed_everything()
-
-CRAWL_EMBEDDING_PATH = 'fastText/crawl-300d-2M.vec'
-GLOVE_EMBEDDING_PATH = 'glove.6B.300d.txt'
-NUM_MODELS = 2
-LSTM_UNITS = 128
-DENSE_HIDDEN_UNITS = 4 * LSTM_UNITS
-MAX_LEN = 220
-
-def get_coefs(word, *arr):
-    return word, np.asarray(arr, dtype='float32')
-
-def load_embeddings(path):
-    with open(path) as f:
-        return dict(get_coefs(*line.strip().split(' ')) for line in tqdm(f))
-
-def build_matrix(word_index, path):
-    embedding_index = load_embeddings(path)
-    embedding_matrix = np.zeros((len(word_index) + 1, 300))
-    unknown_words = []
-    
-    for word, i in word_index.items():
-        try:
-            embedding_matrix[i] = embedding_index[word]
-        except KeyError:
-            unknown_words.append(word)
-    return embedding_matrix, unknown_words
-
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
-
-def train_model(learn,test,output_dim,lr=0.001,
-                batch_size=512, n_epochs=4,
-                enable_checkpoint_ensemble=True):
-    
-    all_test_preds = []
-    checkpoint_weights = [2 ** epoch for epoch in range(n_epochs)]
-    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size, shuffle=False)
-    n = len(learn.data.train_dl)
-    phases = [(TrainingPhase(n).schedule_hp('lr', lr * (0.6**(i)))) for i in range(n_epochs)]
-    sched = GeneralScheduler(learn, phases)
-    learn.callbacks.append(sched)
-    for epoch in range(n_epochs):
-        learn.fit(1)
-        test_preds = np.zeros((len(test), output_dim))    
-        for i, x_batch in enumerate(test_loader):
-            X = x_batch[0].cuda()
-            y_pred = sigmoid(learn.model(X).detach().cpu().numpy())
-            test_preds[i * batch_size:(i+1) * batch_size, :] = y_pred
-
-        all_test_preds.append(test_preds)
-
-
-    if enable_checkpoint_ensemble:
-        test_preds = np.average(all_test_preds, weights=checkpoint_weights, axis=0)    
-    else:
-        test_preds = all_test_preds[-1]
-        
-    return test_preds
-
-class SpatialDropout(nn.Dropout2d):
-    def forward(self, x):
-        x = x.unsqueeze(2)    # (N, T, 1, K)
-        x = x.permute(0, 3, 2, 1)  # (N, K, 1, T)
-        x = super(SpatialDropout, self).forward(x)  # (N, K, 1, T), some features are masked
-        x = x.permute(0, 3, 2, 1)  # (N, T, 1, K)
-        x = x.squeeze(2)  # (N, T, K)
-        return x
-    
-class NeuralNet(nn.Module):
-    def __init__(self, embedding_matrix, num_aux_targets):
-        super(NeuralNet, self).__init__()
-        embed_size = embedding_matrix.shape[1]
-        
-        self.embedding = nn.Embedding(max_features, embed_size)
-        self.embedding.weight = nn.Parameter(torch.tensor(embedding_matrix, dtype=torch.float32))
-        self.embedding.weight.requires_grad = False
-        self.embedding_dropout = SpatialDropout(0.3)
-        
-        self.lstm1 = nn.LSTM(embed_size, LSTM_UNITS, bidirectional=True, batch_first=True)
-        self.lstm2 = nn.LSTM(LSTM_UNITS * 2, LSTM_UNITS, bidirectional=True, batch_first=True)
-    
-        self.linear1 = nn.Linear(DENSE_HIDDEN_UNITS, DENSE_HIDDEN_UNITS)
-        self.linear2 = nn.Linear(DENSE_HIDDEN_UNITS, DENSE_HIDDEN_UNITS)
-        
-        self.linear_out = nn.Linear(DENSE_HIDDEN_UNITS, 1)
-        self.linear_aux_out = nn.Linear(DENSE_HIDDEN_UNITS, num_aux_targets)
-        
-    def forward(self, x):
-        h_embedding = self.embedding(x)
-        h_embedding = self.embedding_dropout(h_embedding)
-        
-        h_lstm1, _ = self.lstm1(h_embedding)
-        h_lstm2, _ = self.lstm2(h_lstm1)
-        
-        # global average pooling
-        avg_pool = torch.mean(h_lstm2, 1)
-        # global max pooling
-        max_pool, _ = torch.max(h_lstm2, 1)
-        
-        h_conc = torch.cat((max_pool, avg_pool), 1)
-        h_conc_linear1  = F.relu(self.linear1(h_conc))
-        h_conc_linear2  = F.relu(self.linear2(h_conc))
-        
-        hidden = h_conc + h_conc_linear1 + h_conc_linear2
-        
-        result = self.linear_out(hidden)
-        aux_result = self.linear_aux_out(hidden)
-        out = torch.cat([result, aux_result], 1)
-        
-        return out
-
-def preprocess(data):
-    '''
-    Credit goes to https://www.kaggle.com/gpreda/jigsaw-fast-compact-solution
-    '''
-    punct = "/-'?!.,#$%\'()*+-/:;<=>@[\\]^_`{|}~`" + '""“”’' + '∞θ÷α•à−β∅³π‘₹´°£€\×™√²—–&'
-    def clean_special_chars(text, punct):
-        for p in punct:
-            text = text.replace(p, ' ')
-        return text
-
-    data = data.astype(str).apply(lambda x: clean_special_chars(x, punct))
-    return data
-print("hello")
-
-"""# Preprocessing"""
-
-
-
-train = pd.read_csv('/content/drive/My Drive/train.csv')
-test = pd.read_csv('/content/data_trig0.csv')
-
-test=test.rename(columns={'0':"id"})
-test = pd.Series(test['id'].values)
-x_train = preprocess(train['comment_text'])
-y_train = np.where(train['target'] >= 0.5, 1, 0)
-y_aux_train = train[['target', 'severe_toxicity', 'obscene', 'identity_attack', 'insult', 'threat']]
-x_test = preprocess(test)
-
-print(type(x_test))
-print(type(x_train))
-
-max_features = None
-
-tokenizer = text.Tokenizer()
-tokenizer.fit_on_texts(list(x_train) + list(x_test))
-
-x_train = tokenizer.texts_to_sequences(x_train)
-x_test = tokenizer.texts_to_sequences(x_test)
-x_train = sequence.pad_sequences(x_train, maxlen=MAX_LEN)
-x_test = sequence.pad_sequences(x_test, maxlen=MAX_LEN)
-
-max_features = max_features or len(tokenizer.word_index) + 1
-max_features
-
-crawl_matrix, unknown_words_crawl = build_matrix(tokenizer.word_index, CRAWL_EMBEDDING_PATH)
-print('n unknown words (crawl): ', len(unknown_words_crawl))
-
-glove_matrix, unknown_words_glove = build_matrix(tokenizer.word_index, GLOVE_EMBEDDING_PATH)
-print('n unknown words (glove): ', len(unknown_words_glove))
-
-embedding_matrix = np.concatenate([crawl_matrix, glove_matrix], axis=-1)
-embedding_matrix.shape
-
-del crawl_matrix
-del glove_matrix
-gc.collect()
-
-x_train_torch = torch.tensor(x_train, dtype=torch.long)
-y_train_torch = torch.tensor(np.hstack([y_train[:, np.newaxis], y_aux_train]), dtype=torch.float32)
-
-x_test_torch = torch.tensor(x_test, dtype=torch.long)
-
-"""# Training"""
-
-batch_size = 512
-
-train_dataset = data.TensorDataset(x_train_torch, y_train_torch)
-valid_dataset = data.TensorDataset(x_train_torch[:batch_size], y_train_torch[:batch_size])
-test_dataset = data.TensorDataset(x_test_torch)
-
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
-
-databunch = DataBunch(train_dl=train_loader,valid_dl=valid_loader)
-
-all_test_preds = []
-
-for model_idx in range(NUM_MODELS):
-    print('Model ', model_idx)
-    seed_everything(1234 + model_idx)
-    model = NeuralNet(embedding_matrix, y_aux_train.shape[-1])
-    learn = Learner(databunch,model,loss_func=nn.BCEWithLogitsLoss(reduction='mean'))
-    test_preds = train_model(learn,test_dataset,output_dim=y_train_torch.shape[-1])
-    
-    all_test_preds.append(test_preds)
-    print()
-
-test=test.rename(columns={'0':"id"})
-print(test)
-
-print(all_test_preds)
-
+t= [item[0] for item in s ]
 submission = pd.DataFrame.from_dict({
-    'id': test,
-    'prediction': np.mean(all_test_preds, axis=0)[:, 0]
-})
-
-submission.to_csv('submission_trig0.csv', index=False)
-
- 
+    'id': test['text'][0:2717],
+    'prediction': t})
+submission.to_csv('toxicity_toxicprompts.csv', index=False)
